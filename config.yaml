@@ -1,0 +1,124 @@
+project:
+  name: "mon-projet"
+  workspace: "./workspace"
+
+models:
+  planner: "claude-opus-4-6"
+  builder: "claude-opus-4-6"
+  evaluator: "claude-opus-4-6"
+
+stack:
+  frontend: "nextjs-tailwind"
+  backend: "auto"                # "api-platform" ou "fastapi" — le builder décide
+  backend_options:
+    - "api-platform"             # PHP 8.3 + Symfony + API Platform
+    - "fastapi"                  # Python + FastAPI
+  database: "sqlite"
+
+orchestration:
+  max_sprints: 15
+  max_retries_per_sprint: 3
+  contract_negotiation_rounds: 3
+
+budget:
+  max_total_usd: 250.0
+
+agent_limits:
+  planner:
+    max_turns: 30
+    permission_mode: "acceptEdits"
+    allowed_tools:
+      - "Read"
+      - "Write"
+      - "Edit"
+      - "Glob"
+      - "Grep"
+      - "Bash"
+  builder:
+    max_turns: 100
+    permission_mode: "acceptEdits"
+    allowed_tools:
+      - "Read"
+      - "Write"
+      - "Edit"
+      - "Glob"
+      - "Grep"
+      - "Bash"
+      - "mcp__harness__update_progress"
+      - "mcp__harness__validate_json"
+  evaluator:
+    max_turns: 60
+    permission_mode: "acceptEdits"
+    allowed_tools:
+      - "Read"
+      - "Glob"
+      - "Grep"
+      - "Bash"
+      - "mcp__harness__update_progress"
+      - "mcp__harness__validate_json"
+
+qa:
+  min_score_global: 7.5
+  min_score_per_criterion: 6.0
+  tools:
+    playwright: true
+    unit_tests: true
+    curl: true
+
+security:
+  bash_allowlist:
+    - "ls"
+    - "cat"
+    - "head"
+    - "tail"
+    - "wc"
+    - "grep"
+    - "find"
+    - "npm"
+    - "npx"
+    - "node"
+    - "pnpm"
+    - "php"
+    - "composer"
+    - "symfony"
+    - "python"
+    - "python3"
+    - "pip"
+    - "pip3"
+    - "uvicorn"
+    - "pytest"
+    - "git"
+    - "curl"
+    - "ps"
+    - "lsof"
+    - "sleep"
+    - "pkill"
+    - "mkdir"
+    - "cp"
+    - "mv"
+    - "touch"
+    - "chmod"
+    - "echo"
+    - "tee"
+    - "sort"
+    - "uniq"
+    - "diff"
+    - "true"
+    - "false"
+    - "test"
+    - "["
+    - "cd"
+    - "pwd"
+    - "env"
+    - "which"
+    - "sh"
+    - "bash"
+  bash_denylist:
+    - "rm -rf /"
+    - "sudo"
+    - "chmod 777"
+    - "wget"
+    - "ssh"
+    - "scp"
+    - "nc "
+    - "netcat"
