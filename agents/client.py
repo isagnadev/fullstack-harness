@@ -13,6 +13,8 @@ from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
+import anyio
+
 from claude_code_sdk import (
     AssistantMessage,
     ClaudeCodeOptions,
@@ -20,6 +22,31 @@ from claude_code_sdk import (
     TextBlock,
     query,
 )
+from claude_code_sdk._errors import MessageParseError
+
+# ---------------------------------------------------------------------------
+# Monkey-patch: SDK v0.0.25 raises on message types added in newer CLI
+# versions (e.g. ``rate_limit_event``).  Patch ``parse_message`` so that
+# unknown types are logged and returned as ``SystemMessage`` instead of
+# raising, which would kill the async generator mid-flight.
+# ---------------------------------------------------------------------------
+import claude_code_sdk._internal.client as _sdk_client
+import claude_code_sdk._internal.message_parser as _mp
+from claude_code_sdk import SystemMessage
+
+_original_parse_message = _mp.parse_message
+
+
+def _patched_parse_message(data):
+    try:
+        return _original_parse_message(data)
+    except MessageParseError:
+        return SystemMessage(subtype=data.get("type", "unknown"), data=data)
+
+
+# Patch both the module and the reference held by the SDK's internal client
+_mp.parse_message = _patched_parse_message
+_sdk_client.parse_message = _patched_parse_message
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +55,29 @@ logger = logging.getLogger(__name__)
 # Streaming prompt wrapper (SDK workaround)
 # ---------------------------------------------------------------------------
 
-async def _wrap_prompt_as_stream(prompt: str) -> AsyncIterator[dict[str, Any]]:
-    """Yield a single user message dict — satisfies the SDK streaming requirement."""
+async def _wrap_prompt_as_stream(
+    prompt: str, done: anyio.Event,
+) -> AsyncIterator[dict[str, Any]]:
+    """Yield a single user message then hold stdin open until the agent finishes.
+
+    The SDK closes stdin (``end_input``) as soon as this iterator is
+    exhausted.  Stdin is also the channel for control-protocol responses
+    (``can_use_tool``, MCP calls), so closing it too early kills the
+    agent.  Closing it too late keeps the CLI alive after the agent is
+    done.
+
+    Solution: block on *done*, which ``run_agent`` sets once it receives
+    the ``ResultMessage``.  That lets stdin close cleanly after all tool
+    permission exchanges are finished.
+    """
     yield {
         "type": "user",
         "message": {"role": "user", "content": prompt},
         "parent_tool_use_id": None,
         "session_id": "default",
     }
+    # Hold the stream open until the result arrives.
+    await done.wait()
 
 
 # ---------------------------------------------------------------------------
@@ -69,9 +111,10 @@ async def run_agent(
     into an ``AsyncIterable`` (streaming mode) as required by the SDK.
     """
     # Determine prompt format
+    done = anyio.Event()
     actual_prompt: str | AsyncIterable[dict[str, Any]]
     if options.can_use_tool is not None:
-        actual_prompt = _wrap_prompt_as_stream(prompt)
+        actual_prompt = _wrap_prompt_as_stream(prompt, done)
     else:
         actual_prompt = prompt
 
@@ -87,6 +130,7 @@ async def run_agent(
                         text_parts.append(block.text)
             elif isinstance(message, ResultMessage):
                 result_msg = message
+                done.set()  # Signal the stream to close stdin
     except Exception:
         logger.exception("Agent execution failed")
         elapsed = int((time.monotonic() - start) * 1000)

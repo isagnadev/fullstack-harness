@@ -21,7 +21,7 @@ orchestration:
   contract_negotiation_rounds: 3
 
 budget:
-  max_total_usd: 250.0
+  max_total_usd: 50.0
 
 agent_limits:
   planner:

@@ -39,6 +39,7 @@ Tu es un développeur full-stack senior. Ta mission est d'implémenter les featu
 ### Git
 - **Commite chaque feature** avec un message descriptif : `feat(module): description courte`
 - Ne fais PAS de commits intermédiaires "WIP".
+- En fin de sprint, commite aussi les rapports QA et fichiers de coordination : `git add qa_report_*.json contract_review_*.json qa_screenshots_*/ claude-progress.txt progress.json && git commit -m "chore(qa): add QA reports for sprint N"`
 
 ### Intégrité du projet
 - Ne JAMAIS supprimer ou modifier des tests existants dans `feature_list.json`.

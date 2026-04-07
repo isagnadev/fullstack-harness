@@ -301,6 +301,11 @@ async def phase_sprints(
     for sprint in sprints[:max_sprints]:
         sprint_num = sprint["id"]
 
+        # Skip already completed sprints
+        if sprint_num <= progress.current_sprint:
+            logger.info("─── Sprint %d (skipped — already done) ───", sprint_num)
+            continue
+
         # Budget check
         if progress.is_over_budget(budget_max):
             logger.warning(
@@ -383,20 +388,27 @@ async def main(user_prompt: str, project_name: str) -> None:
     logger.info("Budget: $%.2f", config["budget"]["max_total_usd"])
     logger.info("")
 
-    # Phase 1: Planning
-    ok = await phase_planning(user_prompt, config, workspace, progress)
-    progress.save(workspace)
-    if not ok:
-        logger.error("Planning failed — aborting")
-        sys.exit(1)
+    # Phase 1: Planning — skip if outputs already exist
+    required_files = ["product_spec.json", "feature_list.json", "init.sh"]
+    if all(os.path.exists(os.path.join(workspace, f)) for f in required_files):
+        logger.info("═══ PHASE 1: PLANNING (skipped — already done) ═══")
+    else:
+        ok = await phase_planning(user_prompt, config, workspace, progress)
+        progress.save(workspace)
+        if not ok:
+            logger.error("Planning failed — aborting")
+            sys.exit(1)
 
     # Phase 2: Sprint loop
     await phase_sprints(config, workspace, progress)
     progress.save(workspace)
 
-    # Phase 3: Final evaluation
-    await phase_final_evaluation(config, workspace, progress)
-    progress.save(workspace)
+    # Phase 3: Final evaluation — skip if report already exists
+    if os.path.exists(os.path.join(workspace, "qa_report_final.json")):
+        logger.info("═══ PHASE 3: FINAL EVALUATION (skipped — already done) ═══")
+    else:
+        await phase_final_evaluation(config, workspace, progress)
+        progress.save(workspace)
 
     # Summary
     logger.info("")

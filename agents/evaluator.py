@@ -33,7 +33,7 @@ def _load_evaluator_options(
         mcp_servers["playwright"] = {
             "type": "stdio",
             "command": "npx",
-            "args": ["@anthropic-ai/playwright-mcp"],
+            "args": ["@playwright/mcp"],
         }
         # Allow all playwright tools
         allowed_tools.append("mcp__playwright__*")
