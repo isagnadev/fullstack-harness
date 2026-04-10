@@ -1,1 +1,18 @@
 __pycache__/
+
+# Python
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Workspace (generated projects)
+workspace/
+
+# Debug logs
+debug*.txt
+cli_debug.log
