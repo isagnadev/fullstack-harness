@@ -27,7 +27,8 @@ class ProjectProgress:
 
     project_name: str
     runs: list[AgentRun] = field(default_factory=list)
-    current_sprint: int = 0
+    current_sprint: int = 0  # highest sprint reached (passed OR failed)
+    failed_sprints: list[int] = field(default_factory=list)
     total_cost_usd: float = 0.0
 
     # ------------------------------------------------------------------
@@ -73,6 +74,7 @@ class ProjectProgress:
             project_name=data.get("project_name", "unknown"),
             runs=runs,
             current_sprint=data.get("current_sprint", 0),
+            failed_sprints=data.get("failed_sprints", []),
             total_cost_usd=data.get("total_cost_usd", 0.0),
         )
 

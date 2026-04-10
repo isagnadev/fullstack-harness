@@ -298,6 +298,17 @@ async def phase_sprints(
     max_sprints = config["orchestration"]["max_sprints"]
     budget_max = config["budget"]["max_total_usd"]
 
+    # If a previous run left failed sprints, stop immediately — the user must
+    # review and either retry (remove from failed_sprints) or give up.
+    if progress.failed_sprints:
+        logger.error(
+            "Previous run has failed sprints: %s. Review them and edit "
+            "progress.json (remove from failed_sprints + lower current_sprint) "
+            "to retry, then relaunch.",
+            progress.failed_sprints,
+        )
+        return
+
     for sprint in sprints[:max_sprints]:
         sprint_num = sprint["id"]
 
@@ -317,12 +328,23 @@ async def phase_sprints(
 
         passed = await run_sprint(sprint_num, config, workspace, progress)
         progress.current_sprint = sprint_num
-        progress.save(workspace)
 
+        if not passed:
+            progress.failed_sprints.append(sprint_num)
+            progress.save(workspace)
+            logger.error(
+                "  Sprint %d FAILED after all retries — stopping pipeline. "
+                "Cumulative cost: $%.2f",
+                sprint_num,
+                progress.total_cost_usd,
+            )
+            append_progress_log(workspace, f"Sprint {sprint_num}: FAILED — pipeline stopped")
+            return
+
+        progress.save(workspace)
         logger.info(
-            "  Sprint %d %s — cumulative cost: $%.2f",
+            "  Sprint %d PASSED — cumulative cost: $%.2f",
             sprint_num,
-            "PASSED" if passed else "FAILED/SKIPPED",
             progress.total_cost_usd,
         )
 
@@ -427,4 +449,8 @@ if __name__ == "__main__":
     user_prompt = sys.argv[1]
     project_name = sys.argv[2] if len(sys.argv) > 2 else "default"
 
-    asyncio.run(main(user_prompt, project_name))
+    try:
+        asyncio.run(main(user_prompt, project_name))
+    except BaseException as exc:
+        logger.exception("Orchestrator crashed: %s", exc)
+        sys.exit(1)
