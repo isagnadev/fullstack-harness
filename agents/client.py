@@ -8,9 +8,12 @@ string.
 from __future__ import annotations
 
 import logging
+import os
+import sys
 import time
 from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import anyio
@@ -48,6 +51,14 @@ def _patched_parse_message(data):
 _mp.parse_message = _patched_parse_message
 _sdk_client.parse_message = _patched_parse_message
 
+# ---------------------------------------------------------------------------
+# Monkey-patch: raise the 1MB JSON buffer limit to 10MB.
+# On later sprints the Builder can produce large responses (big files,
+# long tool outputs) that exceed the default buffer.
+# ---------------------------------------------------------------------------
+import claude_code_sdk._internal.transport.subprocess_cli as _transport
+_transport._MAX_BUFFER_SIZE = 10 * 1024 * 1024  # 10MB
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,8 +66,16 @@ logger = logging.getLogger(__name__)
 # Streaming prompt wrapper (SDK workaround)
 # ---------------------------------------------------------------------------
 
+# How often to check if the CLI is idle (seconds).
+_IDLE_CHECK_INTERVAL = 30
+# If no message arrives for this long, assume the CLI is hung and close stdin.
+_IDLE_TIMEOUT = 120
+
+
 async def _wrap_prompt_as_stream(
-    prompt: str, done: anyio.Event,
+    prompt: str,
+    done: anyio.Event,
+    last_activity: list[float],
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield a single user message then hold stdin open until the agent finishes.
 
@@ -64,11 +83,12 @@ async def _wrap_prompt_as_stream(
     exhausted.  Stdin is also the channel for control-protocol responses
     (``can_use_tool``, MCP calls), so closing it too early kills the
     agent.  Closing it too late keeps the CLI alive after the agent is
-    done.
+    done (e.g. Playwright MCP not shutting down).
 
-    Solution: block on *done*, which ``run_agent`` sets once it receives
-    the ``ResultMessage``.  That lets stdin close cleanly after all tool
-    permission exchanges are finished.
+    Solution: poll *done* with short sleeps, and also check
+    *last_activity* — a shared mutable timestamp updated by ``run_agent``
+    on every received message.  If the CLI goes silent for
+    ``_IDLE_TIMEOUT`` seconds, we return and let stdin close.
     """
     yield {
         "type": "user",
@@ -76,8 +96,16 @@ async def _wrap_prompt_as_stream(
         "parent_tool_use_id": None,
         "session_id": "default",
     }
-    # Hold the stream open until the result arrives.
-    await done.wait()
+    # Poll until done is set or the CLI goes idle.
+    while not done.is_set():
+        with anyio.move_on_after(_IDLE_CHECK_INTERVAL):
+            await done.wait()
+        if not done.is_set() and time.monotonic() - last_activity[0] > _IDLE_TIMEOUT:
+            logger.warning(
+                "CLI idle for %ds — forcing stdin close (MCP server likely hung)",
+                _IDLE_TIMEOUT,
+            )
+            return
 
 
 # ---------------------------------------------------------------------------
@@ -110,11 +138,24 @@ async def run_agent(
     If ``options.can_use_tool`` is set the prompt is automatically wrapped
     into an ``AsyncIterable`` (streaming mode) as required by the SDK.
     """
+    # Log CLI stderr to a file in the workspace for crash diagnosis.
+    # Each run appends with a timestamp header so we can trace which invocation
+    # produced the output.
+    debug_log_path = os.path.join(options.cwd or ".", "cli_debug.log")
+    debug_log = open(debug_log_path, "a", buffering=1)  # line-buffered
+    debug_log.write(
+        f"\n\n===== {datetime.now(timezone.utc).isoformat()} "
+        f"model={options.model} cwd={options.cwd} =====\n"
+    )
+    options.extra_args["debug-to-stderr"] = None
+    options.debug_stderr = debug_log
+
     # Determine prompt format
     done = anyio.Event()
+    last_activity = [time.monotonic()]
     actual_prompt: str | AsyncIterable[dict[str, Any]]
     if options.can_use_tool is not None:
-        actual_prompt = _wrap_prompt_as_stream(prompt, done)
+        actual_prompt = _wrap_prompt_as_stream(prompt, done, last_activity)
     else:
         actual_prompt = prompt
 
@@ -124,6 +165,7 @@ async def run_agent(
 
     try:
         async for message in query(prompt=actual_prompt, options=options):
+            last_activity[0] = time.monotonic()
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
