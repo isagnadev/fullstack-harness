@@ -33,7 +33,7 @@ def _load_evaluator_options(
         mcp_servers["playwright"] = {
             "type": "stdio",
             "command": "npx",
-            "args": ["@playwright/mcp"],
+            "args": ["@playwright/mcp", "--headless"],
         }
         # Allow all playwright tools
         allowed_tools.append("mcp__playwright__*")
