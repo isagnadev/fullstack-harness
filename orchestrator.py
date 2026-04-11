@@ -65,6 +65,55 @@ def _read_json(workspace: str, filename: str) -> dict | list | None:
         return None
 
 
+# Dev server ports that agents may spawn during a sprint. Kept here rather than
+# in config.yaml because it is a harness invariant, not a per-project tunable.
+_DEV_SERVER_PORTS = ("3000", "3001", "8000", "8001")
+
+
+def _cleanup_workspace_ports(workspace: str) -> None:
+    """Kill any dev-server process listening on :3000/:3001/:8000/:8001 whose
+    cwd lives inside *workspace*.
+
+    This prevents zombies surviving across sprints (e.g. when an agent spawns a
+    backgrounded ``uvicorn`` or ``next dev`` and its parent claude subprocess
+    later dies). Processes outside the workspace — including the user's own dev
+    servers for other projects — are deliberately left untouched.
+    """
+    abs_workspace = os.path.realpath(workspace)
+    try:
+        out = subprocess.run(
+            ["lsof", "-tiTCP", "-sTCP:LISTEN",
+             "-i:" + ",".join(_DEV_SERVER_PORTS)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return
+
+    pids = [p for p in out.stdout.split() if p.isdigit()]
+    killed: list[str] = []
+    for pid in pids:
+        try:
+            cwd = os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            continue
+        cwd_real = os.path.realpath(cwd)
+        if cwd_real == abs_workspace or cwd_real.startswith(abs_workspace + os.sep):
+            try:
+                os.kill(int(pid), 15)  # SIGTERM
+                killed.append(pid)
+            except ProcessLookupError:
+                pass
+
+    if killed:
+        logger.info("Cleaned up dev-server zombies: PIDs %s", ",".join(killed))
+        append_progress_log(
+            workspace,
+            f"Cleaned up dev-server zombies: PIDs {','.join(killed)}",
+        )
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 — Planning
 # ---------------------------------------------------------------------------
@@ -205,6 +254,9 @@ async def run_sprint(
     """
     logger.info("─── Sprint %d ───", sprint_num)
     append_progress_log(workspace, f"Sprint {sprint_num}: started")
+
+    # Nuke any dev servers left behind by the previous sprint's agents.
+    _cleanup_workspace_ports(workspace)
 
     # 1. Contract negotiation
     await negotiate_contract(sprint_num, config, workspace, progress)
@@ -421,16 +473,20 @@ async def main(user_prompt: str, project_name: str) -> None:
             logger.error("Planning failed — aborting")
             sys.exit(1)
 
-    # Phase 2: Sprint loop
-    await phase_sprints(config, workspace, progress)
-    progress.save(workspace)
-
-    # Phase 3: Final evaluation — skip if report already exists
-    if os.path.exists(os.path.join(workspace, "qa_report_final.json")):
-        logger.info("═══ PHASE 3: FINAL EVALUATION (skipped — already done) ═══")
-    else:
-        await phase_final_evaluation(config, workspace, progress)
+    try:
+        # Phase 2: Sprint loop
+        await phase_sprints(config, workspace, progress)
         progress.save(workspace)
+
+        # Phase 3: Final evaluation — skip if report already exists
+        if os.path.exists(os.path.join(workspace, "qa_report_final.json")):
+            logger.info("═══ PHASE 3: FINAL EVALUATION (skipped — already done) ═══")
+        else:
+            await phase_final_evaluation(config, workspace, progress)
+            progress.save(workspace)
+    finally:
+        # Always clean up dev-server zombies, even on Ctrl+C or crash.
+        _cleanup_workspace_ports(workspace)
 
     # Summary
     logger.info("")
