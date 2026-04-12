@@ -124,24 +124,22 @@ def create_permission_handler(
                     )
                 )
 
-            # Path-confinement checks.
+            # Path-confinement checks — reject any path argument that
+            # resolves outside the workspace (not just siblings).
             for path in _extract_paths(segment):
                 # Only bother with paths that look like filesystem references.
-                if not (path.startswith("/") or path.startswith("./")
-                        or path.startswith("../") or "/" in path):
+                if not (path == ".." or path.startswith("/")
+                        or path.startswith("./") or path.startswith("../")
+                        or "/" in path):
                     continue
                 candidate = path if os.path.isabs(path) else os.path.join(
                     effective_cwd, path
                 )
-                # Reject references that land inside another sibling workspace
-                # (same parent as our workspace but a different leaf).
-                if _is_inside(candidate, siblings_root) and not _is_inside(
-                    candidate, abs_workspace
-                ):
+                if not _is_inside(candidate, abs_workspace):
                     return PermissionResultDeny(
                         message=(
-                            f"Path '{path}' targets another workspace sibling "
-                            f"outside '{abs_workspace}'."
+                            f"Path '{path}' resolves outside workspace "
+                            f"'{abs_workspace}'."
                         )
                     )
 
@@ -181,12 +179,20 @@ def create_permission_handler(
             if deny is not None:
                 return deny
 
-        # --- Filesystem confinement for Write / Edit ---
-        if tool_name in ("Write", "Edit"):
+        # --- Filesystem confinement for Read / Write / Edit ---
+        if tool_name in ("Read", "Write", "Edit"):
             file_path = input_data.get("file_path", "")
             if not _is_inside(file_path, abs_workspace):
                 return PermissionResultDeny(
                     message=f"Path '{file_path}' is outside workspace '{abs_workspace}'."
+                )
+
+        # --- Filesystem confinement for Glob / Grep (path parameter) ---
+        if tool_name in ("Glob", "Grep"):
+            search_path = input_data.get("path", "")
+            if search_path and not _is_inside(search_path, abs_workspace):
+                return PermissionResultDeny(
+                    message=f"Search path '{search_path}' is outside workspace '{abs_workspace}'."
                 )
 
         return PermissionResultAllow()
