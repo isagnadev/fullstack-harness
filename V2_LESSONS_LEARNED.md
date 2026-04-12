@@ -312,6 +312,61 @@ La question reste ouverte — l'approche clean-state peut gaspiller du travail u
 
 **Recommandation V2** : sauvegarder `progress.json` apres chaque `add_run`, pas seulement a la fin du sprint. Permet aussi un monitoring externe fiable.
 
+### 9.14 Confinement workspace incomplet — contamination inter-projets
+
+**Probleme constate** : sur le projet tarificateur-ia-build, les agents Builder et Evaluator ont derive vers le projet voisin mon-porte-monnaie a partir du sprint 7. Trois vecteurs identifies :
+
+1. **Bash `cd` hors workspace** : `security.py` ne validait que le **premier** binaire d'une commande chainee. `cd ../mon-porte-monnaie/backend && python3 -m uvicorn ...` passait car `_extract_binary()` ne voyait que `cd` (allowliste). Le second binaire et le path cible n'etaient jamais verifies.
+
+2. **Read/Glob/Grep sans confinement** : seuls Write et Edit etaient confines au workspace. Les agents pouvaient lire n'importe quel fichier du systeme via Read, decouvrir des projets voisins via Glob, et chercher du code dans d'autres workspaces via Grep. Un agent curieux qui fait `ls ..` ou `find /home -name Makefile` decouvre les projets voisins sans restriction.
+
+3. **Port 3000 partage entre projets** : aucun mecanisme ne garantit qu'un dev server sur localhost:3000 appartient au projet en cours. Si un autre projet ecoute deja sur ce port, le Builder echoue silencieusement (EADDRINUSE) ou Next.js bascule sur 3001 sans prevenir. L'Evaluator Playwright navigue ensuite vers localhost:3000 et teste le mauvais projet.
+
+**Consequences observees** :
+- L'Evaluator QA sprint 7 a capture des screenshots de mon-porte-monnaie (dashboard avec donut chart des depenses) en croyant tester la page tarification de FunEstim → verdict FAIL sur du contenu sans rapport
+- Le Builder sprint 11 a lance `uvicorn` et `next dev` **dans le workspace mon-porte-monnaie** car il avait lu ses fichiers et s'etait convaincu que c'etait son projet
+- L'Evaluator sprint 12 a tente de sauvegarder des screenshots dans `mon-porte-monnaie/qa_screenshots_sprint12/` (bloque par Playwright allowed_roots)
+- 15 tentatives de Write vers mon-porte-monnaie dans cli_debug.log, toutes refusees par le confinement Write existant, mais revelant la confusion persistante de l'agent
+- Dev servers zombies de mon-porte-monnaie lances par le Builder et survivant au kill de l'orchestrateur (reparentes a systemd --user)
+
+**Solutions V1 appliquees** (commits `a7086de` et `d2fea5f`) :
+- Bash : splitter les commandes chainees (`&&`, `||`, `;`, `|`, `\n`), verifier chaque segment (binary allowlist + path confinement), tracker le `cd` effectif et refuser toute sortie du workspace
+- Read/Glob/Grep : meme confinement que Write/Edit — `file_path` et `path` doivent resoudre dans le workspace
+- Bash paths : tout argument ressemblant a un chemin (`..`, `../x`, `/abs/path`, `rel/path`) est resolu et verifie
+- Cleanup ports : `_cleanup_workspace_ports()` dans l'orchestrateur tue les listeners sur :3000/:3001/:8000/:8001 dont le cwd est dans le workspace, appelee en debut de sprint et dans un `finally` global
+
+**Recommandation V2** :
+- Le confinement workspace doit s'appliquer a **tous** les tools qui manipulent des chemins (Read, Write, Edit, Glob, Grep, Bash), pas seulement a ceux qui ecrivent
+- L'orchestrateur doit gerer le cycle de vie des dev servers : lancement explicite sur des ports dedies, pidfile dans le workspace, kill garanti en fin de sprint
+- Envisager de lancer chaque agent dans un `chroot`, un namespace Linux, ou un container Docker pour rendre le confinement non-contournable au niveau OS
+- Ajouter un health-check post-lancement : l'Evaluator devrait verifier que la page d'accueil affiche le bon nom de projet avant de commencer le QA
+
+### 9.15 Le streaming API peut se bloquer indefiniment
+
+**Probleme constate** : lors du sprint 7 (premiere tentative), l'Evaluator QA s'est fige pendant 40+ minutes. Le process etait en etat `S` (sleeping) dans `ep_poll`, avec deux connexions TCP ESTABLISHED vers l'API Anthropic, mais aucun octet recu depuis 40 minutes. `cli_debug.log` n'avait plus d'entree depuis le dernier `[API REQUEST]`. Le `qa_report_7.json` avait ete ecrit (verdict FAIL) 17 minutes apres le debut, mais le process n'a jamais termine.
+
+**Diagnostic** : la requete streaming vers l'API est restee suspendue — pas de timeout cote SDK, pas de heartbeat, pas de detection de connexion morte. L'agent avait fini son travail (rapport ecrit, `validate_json` appele) mais une requete API supplementaire ou le cleanup MCP a bloque sur une socket morte.
+
+**Impact** : le sprint 7 a ete perdu (1h de stall), le user a du `kill` manuellement, et le restart a relance le sprint depuis zero (contrat → build → QA) car `progress.json` n'avait pas encore ete sauvegarde.
+
+**Recommandation V2** :
+- Implementer un watchdog dans l'orchestrateur : si aucun message n'est recu du subprocess pendant N secondes (ex: 300s), considerer l'agent comme bloque et le tuer proprement (SIGTERM → delai → SIGKILL)
+- Le timeout idle du wrapper de prompt (cf. 9.3) aide, mais ne couvre pas le cas ou le CLI lui-meme est bloque dans le shutdown MCP (cf. 9.2)
+- Surveiller `cli_debug.log` en parallele : si le dernier `[API REQUEST]` date de plus de 5 minutes, c'est un indicateur de stall
+- Sauvegarder `progress.json` a chaque `add_run` (cf. 9.13) pour ne pas perdre le cout des runs terminees quand le suivant bloque
+
+### 9.16 Le feedback QA d'un run tue n'est pas perdu — mais fragile
+
+**Observation positive** : quand l'Evaluator QA sprint 7 a ete kill (apres le stall de 40+ min), son `qa_report_7.json` etait deja ecrit sur disque. Au retry, le Builder a lu ce rapport, a corrige les 4 bugs signales (unicode `\u00e8` en literal dans le JSX, composant monolithique de 1054 lignes, JSON.parse sans try/catch, fonctions backend de 120+ lignes), et le QA retry a valide avec un score de 8.85/10.
+
+**Ce qui a rendu ca possible** : la communication par fichiers JSON (cf. section 10). Le rapport QA persiste independamment du process qui l'a ecrit.
+
+**Ce qui aurait pu mal tourner** : si l'agent avait ete kill *avant* d'ecrire le rapport (ou pendant l'ecriture, produisant un JSON tronque), le retry aurait eu zero feedback et aurait probablement reproduit les memes bugs.
+
+**Recommandation V2** :
+- Ecrire les rapports QA en mode atomique : ecrire dans un fichier `.tmp` puis `rename()` — garantit qu'un rapport est soit complet soit absent, jamais tronque
+- L'orchestrateur devrait verifier la validite du `qa_report_N.json` existant avant de lancer un retry : s'il existe et contient un verdict FAIL, passer directement le feedback au Builder sans re-executer l'Evaluator
+
 ---
 
 ## 10. Points qui ont bien fonctionne

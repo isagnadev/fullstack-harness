@@ -16,12 +16,12 @@ stack:
   database: "sqlite"
 
 orchestration:
-  max_sprints: 15
+  max_sprints: 20
   max_retries_per_sprint: 3
   contract_negotiation_rounds: 3
 
 budget:
-  max_total_usd: 150.0
+  max_total_usd: 300.0
 
 agent_limits:
   planner:
@@ -35,7 +35,7 @@ agent_limits:
       - "Grep"
       - "Bash"
   builder:
-    max_turns: 180
+    max_turns: 210
     permission_mode: "acceptEdits"
     allowed_tools:
       - "Read"
@@ -47,7 +47,7 @@ agent_limits:
       - "mcp__harness__update_progress"
       - "mcp__harness__validate_json"
   evaluator:
-    max_turns: 150
+    max_turns: 180
     permission_mode: "acceptEdits"
     allowed_tools:
       - "Read"
