@@ -367,6 +367,21 @@ La question reste ouverte — l'approche clean-state peut gaspiller du travail u
 - Ecrire les rapports QA en mode atomique : ecrire dans un fichier `.tmp` puis `rename()` — garantit qu'un rapport est soit complet soit absent, jamais tronque
 - L'orchestrateur devrait verifier la validite du `qa_report_N.json` existant avant de lancer un retry : s'il existe et contient un verdict FAIL, passer directement le feedback au Builder sans re-executer l'Evaluator
 
+### 9.17 Le Planner doit dimensionner les sprints en fonction de la complexite, pas du nombre de features
+
+**Probleme constate** : le prompt du Planner dit « 3 a 6 features par sprint ». Le sprint 13 du tarificateur n'avait que 2 features (assistant IA + optimisation parcours) mais elles etaient si lourdes (13+ criteres de test chacune, endpoints IA, composants frontend, integration avec l'existant) que le Builder a sature sa fenetre de contexte (139K/180K tokens) en 94 turns — sans avoir termine. Le sprint a echoue 3 fois de suite.
+
+**Ce qui se passe concretement** : chaque agent Builder dispose d'une fenetre de contexte fixe (~180K tokens effectifs). Chaque turn consomme du contexte : lecture de fichiers existants, ecriture de code, execution de tests (345 tests = output volumineux), appels curl, lecture d'erreurs, corrections. Un sprint avec 2 features « simples » (CRUD basique, 4-5 criteres de test) tient en 40-60 turns. Un sprint avec 2 features « complexes » (integration IA, logique adaptative, composants interactifs) depasse 100 turns et sature le contexte.
+
+**Le comptage par nombre de features est trompeur** : 2 features IA > 5 features CRUD en consommation de contexte.
+
+**Recommandation V2** :
+- Le Planner devrait estimer la **complexite** de chaque feature (simple/moyenne/complexe) en fonction du nombre de criteres de test, du nombre d'endpoints, et du niveau d'integration avec l'existant
+- Regle de dimensionnement : viser un **budget de ~80 turns par sprint** (marge de securite sur une fenetre de 180K tokens). Approximation : ~15-20 turns par feature simple, ~30-40 turns par feature complexe
+- Si un sprint depasse le budget estime, le Planner doit le splitter en sous-sprints — meme si ca fait des sprints a 1 seule feature
+- Le prompt du Planner devrait remplacer « 3 a 6 features par sprint » par une consigne de complexite : « Chaque sprint doit etre realisable par le Builder en moins de 80 turns. Preferer des sprints plus nombreux et plus petits plutot que des sprints ambitieux qui risquent de saturer le contexte. »
+- Idealement, le `product_spec.json` devrait inclure un champ `estimated_complexity` par sprint (low/medium/high) et un `estimated_turns` pour que l'orchestrateur puisse ajuster dynamiquement `max_turns`
+
 ---
 
 ## 10. Points qui ont bien fonctionne
