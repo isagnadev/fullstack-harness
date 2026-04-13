@@ -118,8 +118,8 @@ async def run_evaluator_qa(
     options = _load_evaluator_options(config, workspace_dir, with_playwright=True)
 
     qa_config = config.get("qa", {})
-    min_global = qa_config.get("min_score_global", 7.5)
-    min_criterion = qa_config.get("min_score_per_criterion", 6.0)
+    min_global = qa_config.get("min_score_global", 8.0)
+    min_criterion = qa_config.get("min_score_per_criterion", 7.0)
 
     report_name = (
         "qa_report_final.json" if sprint_num == 0

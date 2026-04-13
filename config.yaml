@@ -12,7 +12,6 @@ stack:
   backend: "auto"                # "api-platform" ou "fastapi" — le builder décide
   backend_options:
     - "api-platform"             # PHP 8.3 + Symfony + API Platform
-    - "fastapi"                  # Python + FastAPI
   database: "sqlite"
 
 orchestration:
@@ -58,8 +57,8 @@ agent_limits:
       - "mcp__harness__validate_json"
 
 qa:
-  min_score_global: 7.5
-  min_score_per_criterion: 6.0
+  min_score_global: 8
+  min_score_per_criterion: 7.0
   tools:
     playwright: true
     unit_tests: true
