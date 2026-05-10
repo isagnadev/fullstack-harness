@@ -4,8 +4,8 @@ project:
 
 models:
   planner: "claude-opus-4-6"
-  builder: "claude-opus-4-6"
-  evaluator: "claude-opus-4-6"
+  builder: "claude-opus-4-7"
+  evaluator: "claude-opus-4-7"
 
 stack:
   frontend: "nextjs-tailwind"
@@ -20,7 +20,7 @@ orchestration:
   contract_negotiation_rounds: 3
 
 budget:
-  max_total_usd: 300.0
+  max_total_usd: 700.0
 
 agent_limits:
   planner:
