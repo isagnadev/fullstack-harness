@@ -96,7 +96,7 @@ Ces critères sont utilisés par l'évaluateur pour noter chaque sprint et par l
 score_final = (completeness × 0.30) + (design × 0.25) + (robustness × 0.25) + (code_quality × 0.20)
 ```
 
-**PASS** si `score_final >= 7.5` ET chaque critère individuel `>= 6.0`
+**PASS** si `score_final >= 8` ET chaque critère individuel `>= 7.0`
 **FAIL** sinon
 
 **Exception** : un sprint est automatiquement en FAIL si une feature **centrale** (core feature du sprint contract) est totalement cassée, quel que soit le score.

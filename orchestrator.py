@@ -160,13 +160,13 @@ async def phase_planning(
             check=True,
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=900,
         )
     except subprocess.CalledProcessError as exc:
         logger.error("init.sh failed:\n%s", exc.stderr)
         return False
     except subprocess.TimeoutExpired:
-        logger.error("init.sh timed out after 300s")
+        logger.error("init.sh timed out after 900s")
         return False
 
     cost = result.cost_usd

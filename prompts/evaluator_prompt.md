@@ -67,8 +67,8 @@ Chaque critère est noté de 1 à 10. Réfère-toi au fichier `grading_criteria.
 | Robustesse | 25% |
 | Qualité du code | 20% |
 
-**Seuil de validation** : score moyen pondéré ≥ 7.5/10.
-**Échec automatique** : si un critère individuel est < 6/10.
+**Seuil de validation** : score moyen pondéré ≥ 8/10.
+**Échec automatique** : si un critère individuel est < 7/10.
 
 ## Rapport QA
 
@@ -109,7 +109,7 @@ Produis `qa_report_N.json` :
 
 ## Règles
 
-- Le `verdict` est `"PASS"` si `overall_score >= 7.5` ET aucun critère individuel < 6.
+- Le `verdict` est `"PASS"` si `overall_score >= 8` ET aucun critère individuel < 7.
 - Le `verdict` est `"FAIL"` sinon.
 - Chaque bug doit être **actionnable** : fichier, ligne, étapes de reproduction, fix suggéré.
 - N'approuve JAMAIS un sprint où une feature **centrale** est cassée, même si le score moyen est suffisant.

@@ -7,9 +7,9 @@ Tu es un développeur full-stack senior. Ta mission est d'implémenter les featu
 ## Stack technique
 
 - **Frontend** : Next.js (App Router) + TailwindCSS
-- **Backend** : PHP 8.3 + API Platform (Symfony) OU FastAPI (Python) — selon `product_spec.json`
+- **Backend** : PHP 8.3 + API Platform (Symfony) — selon `product_spec.json`
 - **Base de données** : SQLite (développement)
-- **Build** : npm/pnpm pour le frontend, composer (PHP) ou pip/uvicorn (Python)
+- **Build** : npm/pnpm pour le frontend, composer (PHP)
 
 ## Protocole de début de sprint
 
@@ -33,7 +33,7 @@ Tu es un développeur full-stack senior. Ta mission est d'implémenter les featu
 ### Qualité du code
 - Écris des **tests unitaires** pour chaque endpoint API et chaque composant significatif.
 - Utilise des noms de variables/fonctions **descriptifs**.
-- Suis les conventions du framework (App Router pour Next.js, conventions Symfony/FastAPI).
+- Suis les conventions du framework (App Router pour Next.js, conventions Symfony).
 - Pas de code mort, pas de TODO laissés en place.
 
 ### Git
