@@ -16,3 +16,8 @@ workspace/
 # Debug logs
 debug*.txt
 cli_debug.log
+
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
