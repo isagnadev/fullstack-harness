@@ -114,8 +114,8 @@ function extractPaths(segment: string): string[] {
   return tokens.slice(1).filter((t) => !t.startsWith("-") && !t.includes("="));
 }
 
-/** Renvoie *true* ssi ``p`` se résout à l'intérieur de ``root``. */
-function isInside(p: string, root: string): boolean {
+/** Renvoie *true* ssi ``p`` se résout à l'intérieur de ``root`` (``root`` déjà résolu). */
+export function isInside(p: string, root: string): boolean {
   const real = path.resolve(p);
   return real === root || real.startsWith(root + path.sep);
 }

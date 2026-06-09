@@ -21,6 +21,7 @@ import { parse } from "yaml";
 import { runEvaluatorQa, runEvaluatorReviewContract } from "./agents/evaluator";
 import { runBuilderContract, runBuilderImplement } from "./agents/builder";
 import { runPlanner } from "./agents/planner";
+import { resolveWorkspace } from "./paths";
 import {
   appendProgressLog,
   makeAgentRun,
@@ -546,7 +547,9 @@ export async function main(
 ): Promise<void> {
   const config = loadConfig();
 
-  const workspace = path.resolve(config.project.workspace, projectName);
+  // DX-16 : valide projectName AVANT tout effet de bord (mkdir, git init,
+  // permission handler) — le chemin résolu devient la racine du confinement.
+  const workspace = resolveWorkspace(config.project.workspace, projectName);
   fs.mkdirSync(workspace, { recursive: true });
 
   // Initialise git si ce n'est pas déjà fait.

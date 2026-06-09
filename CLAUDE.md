@@ -13,6 +13,10 @@ Agents communicate through JSON files on disk — never in-memory state.
 > shared, unchanged from V1. The port deliberately preserves V1 behavior **including its known
 > limitations** (e.g. `progress.json` is saved only at sprint end; a crashed agent reports
 > `cost_usd = 0`). See `docs/superpowers/specs/` and `docs/superpowers/plans/` for the migration spec.
+> Assumed divergence (DX-16): unlike V1 (`orchestrator.py:448`), the project name from argv is
+> validated (`src/paths.ts`) before resolving the workspace — names not matching `[A-Za-z0-9._-]+`
+> (a single path segment; this includes any name escaping `./workspace`) are rejected at startup,
+> since the resolved path becomes the root of the agents' security confinement.
 
 ## Commands
 
