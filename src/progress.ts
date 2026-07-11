@@ -63,8 +63,14 @@ export class ProjectProgress {
     // donc une BORNE BASSE du coût réel. Fidélité V1 : on additionne cost_usd
     // tel quel (on n'invente aucun coût) ; on compte seulement le run comme
     // « non comptabilisé » pour l'observabilité (DX-20).
+    //
+    // NB : un run échoué peut aussi porter un coût RÉEL (ResultMessage reçu
+    // avec is_error=true, p.ex. error_max_turns : client.ts mappe alors
+    // costUsd = resultMsg.total_cost_usd). Ce coût EST additionné ci-dessous —
+    // le run n'est donc « non comptabilisé » que si cost_usd=0 (crash/abort
+    // sans ResultMessage).
     this.total_cost_usd += run.cost_usd;
-    if (run.success === false) {
+    if (run.success === false && run.cost_usd === 0) {
       this.uncounted_runs += 1;
     }
   }

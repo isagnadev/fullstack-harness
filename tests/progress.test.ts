@@ -69,6 +69,23 @@ describe("ProjectProgress.uncounted_runs (DX-20)", () => {
     expect(p.runs).toHaveLength(2); // le run échoué reste compté dans runs[]
   });
 
+  it("addRun({success:false, cost_usd>0}) n'incrémente PAS uncounted_runs (coût réel comptabilisé, ex. error_max_turns)", () => {
+    const p = new ProjectProgress("demo");
+    const failedWithCost = makeAgentRun({
+      agent: "builder",
+      phase: "sprint_1_build_0",
+      cost_usd: 20,
+      duration_ms: 42,
+      num_turns: 210,
+      success: false,
+    });
+    p.addRun(failedWithCost);
+
+    expect(p.uncounted_runs).toBe(0); // le coût A été comptabilisé
+    expect(p.total_cost_usd).toBeCloseTo(20, 10);
+    expect(p.runs).toHaveLength(1);
+  });
+
   it("addRun avec success:true n'incrémente pas uncounted_runs", () => {
     const p = new ProjectProgress("demo");
     p.addRun(run("planning", 0.25));
