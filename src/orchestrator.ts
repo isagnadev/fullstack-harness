@@ -100,15 +100,35 @@ export function cleanupWorkspacePorts(workspace: string): void {
       { encoding: "utf-8", timeout: 5000 },
     );
     if (out.error) {
+      console.debug(
+        `cleanupWorkspacePorts: lsof unavailable/failed (${out.error}) — ` +
+          `skipping port cleanup`,
+      );
       return;
     }
     stdout = out.stdout ?? "";
-  } catch {
+  } catch (e) {
+    console.debug(
+      `cleanupWorkspacePorts: lsof unavailable/failed (${e}) — ` +
+        `skipping port cleanup`,
+    );
     return;
   }
 
   try {
     const pids = stdout.split(/\s+/).filter((p) => /^\d+$/.test(p));
+
+    // DX-14 : sans /proc (macOS, etc.) impossible de filtrer les PID par cwd.
+    // Signalé une seule fois plutôt qu'un skip silencieux pid par pid.
+    if (!fs.existsSync("/proc")) {
+      console.debug(
+        `cleanupWorkspacePorts: /proc indisponible ` +
+          `(platform=${process.platform}) — impossible de filtrer les PID ` +
+          `par cwd, skip`,
+      );
+      return;
+    }
+
     const killed: string[] = [];
     for (const pid of pids) {
       let cwd: string;
@@ -130,8 +150,12 @@ export function cleanupWorkspacePorts(workspace: string): void {
         try {
           process.kill(Number(pid), "SIGTERM");
           killed.push(pid);
-        } catch {
-          // ProcessLookupError équivalent — ignore.
+        } catch (e) {
+          // ProcessLookupError équivalent — le process est déjà terminé.
+          console.debug(
+            `cleanupWorkspacePorts: process.kill(${pid}) a échoué ` +
+              `(probablement déjà terminé) — ${e}`,
+          );
         }
       }
     }
@@ -143,8 +167,9 @@ export function cleanupWorkspacePorts(workspace: string): void {
         `Cleaned up dev-server zombies: PIDs ${killed.join(",")}`,
       );
     }
-  } catch {
+  } catch (e) {
     // try/catch tout — ne jamais faire échouer le nettoyage.
+    console.debug(`cleanupWorkspacePorts: erreur inattendue ignorée — ${e}`);
   }
 }
 
