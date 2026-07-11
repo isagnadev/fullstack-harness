@@ -36,6 +36,48 @@ export interface AgentResult {
 }
 
 // ---------------------------------------------------------------------------
+// Diagnostic des échecs (DX-14) — formatage pur, testé unitairement.
+// Logging additif uniquement : les objets de retour de runAgent restent
+// strictement identiques à la V1 (isError: true, costUsd: 0, ...).
+// ---------------------------------------------------------------------------
+
+/**
+ * Ligne datée pour cli_debug.log. Format volontairement distinct de
+ * l'en-tête d'invocation `=====` pour éviter toute confusion à la lecture.
+ */
+export function formatDebugLine(msg: string, now: Date): string {
+  return `\n[${now.toISOString()}] ${msg}\n`;
+}
+
+/**
+ * Message diagnostique du chemin d'exception de runAgent : distingue l'abort
+ * du watchdog d'inactivité (le `for await` rejette après `controller.abort()`)
+ * d'un crash réel du SDK/CLI — deux causes auparavant indistinguables.
+ */
+export function formatRunFailure(err: unknown, aborted: boolean): string {
+  if (aborted) {
+    return (
+      `[runAgent ABORT] watchdog idle-timeout ` +
+      `(>${IDLE_TIMEOUT_MS / 1000}s) — ${String(err)}`
+    );
+  }
+  return `[runAgent EXCEPTION] ${
+    err instanceof Error ? (err.stack ?? err.message) : String(err)
+  }`;
+}
+
+/**
+ * Message diagnostique du chemin « stream terminé proprement mais sans
+ * message `result` » — sémantiquement distinct d'une exception.
+ */
+export function formatNoResult(durationMs: number): string {
+  return (
+    `[runAgent NO_RESULT] stream terminé sans message 'result' ` +
+    `(durée ${durationMs}ms)`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Runner principal
 // ---------------------------------------------------------------------------
 
@@ -51,6 +93,11 @@ export async function runAgent(
     `\n\n===== ${new Date().toISOString()} ` +
       `model=${options.model} cwd=${options.cwd} =====\n`,
   );
+
+  // Trace diagnostique datée dans cli_debug.log (DX-14).
+  const logDebug = (msg: string): void => {
+    appendFileSync(debugLogPath, formatDebugLine(msg, new Date()));
+  };
 
   const controller = new AbortController();
   const finalOptions: Options = {
@@ -96,8 +143,10 @@ export async function runAgent(
           continue;
       }
     }
-  } catch {
-    // Abort ou crash -> isError true.
+  } catch (err) {
+    // Abort ou crash -> isError true. On loggue la cause (DX-14) sans rien
+    // changer aux valeurs de retour (fidélité V1 : costUsd = 0).
+    logDebug(formatRunFailure(err, controller.signal.aborted));
     return {
       textOutput: textParts.join("\n"),
       costUsd: 0,
@@ -112,6 +161,7 @@ export async function runAgent(
   }
 
   if (resultMsg === null) {
+    logDebug(formatNoResult(Date.now() - start));
     return {
       textOutput: textParts.join("\n"),
       costUsd: 0,
