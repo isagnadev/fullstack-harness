@@ -17,6 +17,9 @@ Agents communicate through JSON files on disk — never in-memory state.
 > validated (`src/paths.ts`) before resolving the workspace — names not matching `[A-Za-z0-9._-]+`
 > (a single path segment; this includes any name escaping `./workspace`) are rejected at startup,
 > since the resolved path becomes the root of the agents' security confinement.
+> Assumed divergence (DX-15): `main()` runs an environment **preflight** (`src/preflight.ts`,
+> absent from V1) before any side effect; on agent `isError` the orchestrator prints the path of
+> `cli_debug.log`. The watchdog / `isError` / `cost_usd = 0` conventions themselves are unchanged.
 
 ## Commands
 
@@ -34,6 +37,7 @@ session). Note: `vitest` is pinned to `^2` because `vitest@4` requires Node ≥ 
 
 ### Three-phase orchestration (`src/orchestrator.ts`)
 
+0. **Preflight** (`src/preflight.ts`, DX-15) — before creating the workspace or running `git init`, `main()` checks the environment with local probes only (no API call): `claude --version` failing is **fatal** (explicit error listing all detected problems at once); a missing `ANTHROPIC_API_KEY` or an unavailable `@playwright/mcp` (when `qa.tools.playwright` is true) is a **warning** only. This turns a bad setup into a < 5 s failure instead of a ~120 s watchdog timeout.
 1. **Planning** — Planner agent turns user prompt into `product_spec.json`, `feature_list.json`, and `init.sh`. The orchestrator runs `init.sh` to scaffold the project.
 2. **Sprint loop** — For each sprint in the product spec:
    - **Contract negotiation**: Builder proposes `sprint_contract_N.json`, Evaluator reviews → `contract_review_N.json`. Up to `contract_negotiation_rounds` iterations.
@@ -59,7 +63,8 @@ mode required. `runAgent()` (Runner-A) passes the prompt as a string, isolates s
 arrives for 120 s it calls `abortController.abort()`. Unknown SDK message types are ignored
 (`switch` `default: continue`, never throw). Cost/turns/duration come from the `result` message; a
 missing `result` (crash/abort) yields `isError: true, costUsd: 0`. CLI stderr is redirected to
-`cli_debug.log` in the workspace.
+`cli_debug.log` in the workspace; on every agent `isError` the orchestrator prints that file's
+absolute path (`cliDebugLogHint()` in `src/preflight.ts`, DX-15) since it holds the real cause.
 
 ### Inter-agent JSON protocol
 
