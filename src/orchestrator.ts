@@ -22,6 +22,7 @@ import { runEvaluatorQa, runEvaluatorReviewContract } from "./agents/evaluator";
 import { runBuilderContract, runBuilderImplement } from "./agents/builder";
 import { runPlanner } from "./agents/planner";
 import { resolveWorkspace } from "./paths";
+import { cliDebugLogHint, preflight } from "./preflight";
 import {
   appendProgressLog,
   makeAgentRun,
@@ -175,6 +176,7 @@ export async function phasePlanning(
 
   if (result.isError) {
     console.error("Planner agent failed");
+    console.error(cliDebugLogHint(workspace));
     return false;
   }
 
@@ -251,6 +253,9 @@ export async function negotiateContract(
         success: !bResult.isError,
       }),
     );
+    if (bResult.isError) {
+      console.error(cliDebugLogHint(workspace));
+    }
 
     const contract = readJson(workspace, `sprint_contract_${sprintNum}.json`);
     if (contract === null) {
@@ -274,6 +279,9 @@ export async function negotiateContract(
         success: !eResult.isError,
       }),
     );
+    if (eResult.isError) {
+      console.error(cliDebugLogHint(workspace));
+    }
 
     const review = readJson(
       workspace,
@@ -363,6 +371,7 @@ export async function runSprint(
 
     if (bResult.isError) {
       console.warn("  Builder agent errored — retrying");
+      console.error(cliDebugLogHint(workspace));
       continue;
     }
 
@@ -378,6 +387,9 @@ export async function runSprint(
         success: !eResult.isError,
       }),
     );
+    if (eResult.isError) {
+      console.error(cliDebugLogHint(workspace));
+    }
 
     const report = readJson(
       workspace,
@@ -521,6 +533,9 @@ export async function phaseFinalEvaluation(
       success: !result.isError,
     }),
   );
+  if (result.isError) {
+    console.error(cliDebugLogHint(workspace));
+  }
 
   const report = readJson(workspace, "qa_report_final.json") as QaReport | null;
   if (report) {
@@ -546,6 +561,11 @@ export async function main(
   projectName: string,
 ): Promise<void> {
   const config = loadConfig();
+
+  // DX-15 : preflight des prérequis d'environnement (CLI claude, clé/session,
+  // playwright) AVANT tout effet de bord (mkdir, git init) — échec fatal en
+  // quelques ms plutôt qu'après 120 s de watchdog ; aucun appel API payant.
+  preflight(config);
 
   // DX-16 : valide projectName AVANT tout effet de bord (mkdir, git init,
   // permission handler) — le chemin résolu devient la racine du confinement.
