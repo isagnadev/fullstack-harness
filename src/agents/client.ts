@@ -147,6 +147,9 @@ export async function runAgent(
     // Abort ou crash -> isError true. On loggue la cause (DX-14) sans rien
     // changer aux valeurs de retour (fidélité V1 : costUsd = 0).
     logDebug(formatRunFailure(err, controller.signal.aborted));
+    // BORNE BASSE (DX-20) : le coût des tours déjà facturés avant
+    // l'abort/crash est perdu (pas de ResultMessage). total_cost_usd
+    // sous-estimera le coût réel ; cf. progress.addRun et isOverBudget.
     return {
       textOutput: textParts.join("\n"),
       costUsd: 0,
@@ -162,6 +165,9 @@ export async function runAgent(
 
   if (resultMsg === null) {
     logDebug(formatNoResult(Date.now() - start));
+    // BORNE BASSE (DX-20) : le coût des tours déjà facturés avant le crash
+    // est perdu (pas de ResultMessage). total_cost_usd sous-estimera le
+    // coût réel ; cf. progress.addRun et isOverBudget.
     return {
       textOutput: textParts.join("\n"),
       costUsd: 0,

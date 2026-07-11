@@ -461,6 +461,30 @@ export async function runSprint(
   return false;
 }
 
+/**
+ * Avertissement « borne basse » du garde-fou budgétaire (DX-20).
+ *
+ * Fonction PURE extraite pour la testabilité. Les runs échoués (crash/abort)
+ * rapportent cost_usd=0 (cf. client.ts) alors qu'ils ont typiquement déjà
+ * consommé des tokens côté API : total_cost_usd sous-estime alors le coût
+ * réel. Retourne null quand il n'y a rien à signaler (aucun run non
+ * comptabilisé).
+ */
+export function formatUncountedRunsWarning(
+  uncountedRuns: number,
+  totalCostUsd: number,
+  budgetMax: number,
+): string | null {
+  if (uncountedRuns <= 0) {
+    return null;
+  }
+  return (
+    `Note: ${uncountedRuns} failed run(s) with unaccounted cost — real API ` +
+    `cost likely exceeds total_cost_usd ($${totalCostUsd.toFixed(2)} / ` +
+    `$${budgetMax.toFixed(2)}); the budget guard is a lower bound.`
+  );
+}
+
 /** Exécute tous les sprints du product spec. */
 export async function phaseSprints(
   config: Config,
@@ -500,7 +524,17 @@ export async function phaseSprints(
       continue;
     }
 
-    // Vérification du budget.
+    // Vérification du budget. total_cost_usd est une BORNE BASSE : les runs
+    // crashés/avortés rapportent cost_usd=0 (DX-20) — on le signale à
+    // l'opérateur sans changer la sémantique de isOverBudget.
+    const uncountedWarning = formatUncountedRunsWarning(
+      progress.uncounted_runs,
+      progress.total_cost_usd,
+      budgetMax,
+    );
+    if (uncountedWarning !== null) {
+      console.warn(uncountedWarning);
+    }
     if (progress.isOverBudget(budgetMax)) {
       console.warn(
         `Budget exceeded ($${progress.total_cost_usd.toFixed(2)} / ` +
@@ -620,6 +654,18 @@ export async function main(
     const ok = await phasePlanning(userPrompt, config, workspace, progress);
     progress.save(workspace);
     if (!ok) {
+      // DX-20 : un planner crashé/avorté pousse un run cost_usd=0 — sans ce
+      // warning, le run se terminerait ici (exit avant les deux autres sites
+      // d'émission : check budget inter-sprints et résumé final) avec
+      // uncounted_runs persisté mais aucune mention de la borne basse.
+      const planningUncountedWarning = formatUncountedRunsWarning(
+        progress.uncounted_runs,
+        progress.total_cost_usd,
+        config.budget.max_total_usd,
+      );
+      if (planningUncountedWarning !== null) {
+        console.warn(planningUncountedWarning);
+      }
       console.error("Planning failed — aborting");
       process.exit(1);
     }
@@ -648,5 +694,14 @@ export async function main(
   console.info(`Sprints completed: ${progress.current_sprint}`);
   console.info(`Total runs: ${progress.runs.length}`);
   console.info(`Total cost: $${progress.total_cost_usd.toFixed(2)}`);
+  // DX-20 : signale les runs échoués non comptabilisés (total = borne basse).
+  const summaryUncountedWarning = formatUncountedRunsWarning(
+    progress.uncounted_runs,
+    progress.total_cost_usd,
+    config.budget.max_total_usd,
+  );
+  if (summaryUncountedWarning !== null) {
+    console.warn(summaryUncountedWarning);
+  }
   console.info(`Workspace: ${workspace}`);
 }
