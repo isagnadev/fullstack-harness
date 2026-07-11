@@ -36,6 +36,12 @@ export class ProjectProgress {
   current_sprint: number; // plus haut sprint atteint (réussi OU échoué)
   failed_sprints: number[];
   total_cost_usd: number;
+  /**
+   * DX-20 — nombre de runs échoués dont le coût n'a PAS pu être comptabilisé
+   * (crash/abort → cost_usd=0, cf. client.ts). Champ d'observabilité additif :
+   * absent du format V1 Python, ajouté sans supprimer/renommer aucun champ.
+   */
+  uncounted_runs: number;
 
   constructor(project_name: string) {
     this.project_name = project_name;
@@ -43,6 +49,7 @@ export class ProjectProgress {
     this.current_sprint = 0;
     this.failed_sprints = [];
     this.total_cost_usd = 0;
+    this.uncounted_runs = 0;
   }
 
   // ------------------------------------------------------------------
@@ -51,7 +58,15 @@ export class ProjectProgress {
 
   addRun(run: AgentRun): void {
     this.runs.push(run);
+    // Un run échoué (success=false) a typiquement consommé des tokens avant le
+    // crash/abort mais renvoie cost_usd=0 (cf. client.ts). total_cost_usd est
+    // donc une BORNE BASSE du coût réel. Fidélité V1 : on additionne cost_usd
+    // tel quel (on n'invente aucun coût) ; on compte seulement le run comme
+    // « non comptabilisé » pour l'observabilité (DX-20).
     this.total_cost_usd += run.cost_usd;
+    if (run.success === false) {
+      this.uncounted_runs += 1;
+    }
   }
 
   // ------------------------------------------------------------------
@@ -85,6 +100,7 @@ export class ProjectProgress {
       current_sprint: this.current_sprint,
       failed_sprints: this.failed_sprints,
       total_cost_usd: this.total_cost_usd,
+      uncounted_runs: this.uncounted_runs,
     };
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
   }
@@ -102,12 +118,15 @@ export class ProjectProgress {
       current_sprint?: number;
       failed_sprints?: number[];
       total_cost_usd?: number;
+      uncounted_runs?: number;
     };
     const progress = new ProjectProgress(data.project_name ?? "unknown");
     progress.runs = data.runs ?? [];
     progress.current_sprint = data.current_sprint ?? 0;
     progress.failed_sprints = data.failed_sprints ?? [];
     progress.total_cost_usd = data.total_cost_usd ?? 0;
+    // Rétrocompat : les progress.json V1/antérieurs n'ont pas ce champ.
+    progress.uncounted_runs = data.uncounted_runs ?? 0;
     return progress;
   }
 }

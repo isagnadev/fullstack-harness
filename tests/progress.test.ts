@@ -43,6 +43,99 @@ describe("ProjectProgress.addRun", () => {
   });
 });
 
+describe("ProjectProgress.uncounted_runs (DX-20)", () => {
+  it("vaut 0 sur une instance vierge", () => {
+    const p = new ProjectProgress("demo");
+    expect(p.uncounted_runs).toBe(0);
+  });
+
+  it("addRun({success:false, cost_usd:0}) incrémente uncounted_runs et laisse total_cost_usd inchangé", () => {
+    const p = new ProjectProgress("demo");
+    p.addRun(run("planning", 0.5));
+    expect(p.total_cost_usd).toBeCloseTo(0.5, 10);
+
+    const failed = makeAgentRun({
+      agent: "builder",
+      phase: "sprint_1_build_0",
+      cost_usd: 0,
+      duration_ms: 42,
+      num_turns: 0,
+      success: false,
+    });
+    p.addRun(failed);
+
+    expect(p.uncounted_runs).toBe(1);
+    expect(p.total_cost_usd).toBeCloseTo(0.5, 10); // inchangé (cost_usd=0 additionné tel quel)
+    expect(p.runs).toHaveLength(2); // le run échoué reste compté dans runs[]
+  });
+
+  it("addRun avec success:true n'incrémente pas uncounted_runs", () => {
+    const p = new ProjectProgress("demo");
+    p.addRun(run("planning", 0.25));
+    p.addRun(run("sprint_1_build_0", 0.75));
+    expect(p.uncounted_runs).toBe(0);
+  });
+
+  it("round-trip save/load préserve uncounted_runs", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-progress-"));
+    try {
+      const p = new ProjectProgress("demo");
+      p.addRun(
+        makeAgentRun({
+          agent: "planner",
+          phase: "planning",
+          cost_usd: 0,
+          duration_ms: 10,
+          num_turns: 0,
+          success: false,
+        }),
+      );
+      p.addRun(
+        makeAgentRun({
+          agent: "evaluator",
+          phase: "sprint_1_qa_0",
+          cost_usd: 0,
+          duration_ms: 10,
+          num_turns: 0,
+          success: false,
+        }),
+      );
+      expect(p.uncounted_runs).toBe(2);
+
+      p.save(dir);
+      const loaded = ProjectProgress.load(dir);
+      expect(loaded.uncounted_runs).toBe(2);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("load d'un progress.json legacy sans uncounted_runs retourne 0 (rétrocompat)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "harness-progress-"));
+    try {
+      // Fichier V1 : aucun champ uncounted_runs.
+      const legacy = {
+        project_name: "legacy",
+        runs: [],
+        current_sprint: 1,
+        failed_sprints: [],
+        total_cost_usd: 3.5,
+      };
+      fs.writeFileSync(
+        path.join(dir, "progress.json"),
+        JSON.stringify(legacy, null, 2),
+        "utf-8",
+      );
+
+      const loaded = ProjectProgress.load(dir);
+      expect(loaded.uncounted_runs).toBe(0);
+      expect(loaded.total_cost_usd).toBeCloseTo(3.5, 10);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("ProjectProgress.isOverBudget", () => {
   it("renvoie true quand total_cost_usd >= maxUsd (limite incluse)", () => {
     const p = new ProjectProgress("demo");

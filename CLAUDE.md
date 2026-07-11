@@ -44,7 +44,13 @@ session). Note: `vitest` is pinned to `^2` because `vitest@4` requires Node ≥ 
    - **Implementation + QA**: Builder implements, Evaluator tests → `qa_report_N.json`. Loops with QA feedback up to `max_retries_per_sprint` times. PASS requires weighted score >= `min_score_global` AND every criterion >= `min_score_per_criterion` (the per-criterion gate is enforced by the evaluator prompt + `grading_criteria.md`; the orchestrator's `sprintPassed()` checks `verdict === "PASS" && overall_score >= min_score_global`).
 3. **Final evaluation** — Evaluator runs end-to-end QA (`sprintNum === 0` convention) → `qa_report_final.json`.
 
-Budget is enforced between sprints via `ProjectProgress.isOverBudget()`.
+Budget is enforced between sprints via `ProjectProgress.isOverBudget()`. Note (DX-20):
+`total_cost_usd` is a **lower bound** of the real API cost — crashed/aborted runs report
+`cost_usd = 0` (see Runner below) even though billed turns usually preceded the failure, so
+`isOverBudget()` can let a real overrun through. The `uncounted_runs` field in `progress.json`
+counts those failed runs, and the orchestrator warns (before each budget check and in the final
+summary) whenever `uncounted_runs > 0`. The check also runs only between sprints, never inside a
+sprint's retry loop.
 
 ### Agent composition pattern
 
