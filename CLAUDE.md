@@ -48,8 +48,10 @@ Budget is enforced between sprints via `ProjectProgress.isOverBudget()`. Note (D
 `total_cost_usd` is a **lower bound** of the real API cost — crashed/aborted runs report
 `cost_usd = 0` (see Runner below) even though billed turns usually preceded the failure, so
 `isOverBudget()` can let a real overrun through. The `uncounted_runs` field in `progress.json`
-counts those failed runs, and the orchestrator warns (before each budget check and in the final
-summary) whenever `uncounted_runs > 0`. The check also runs only between sprints, never inside a
+counts those zero-cost failed runs (a failed run whose error `ResultMessage` carried a real
+`total_cost_usd`, e.g. `error_max_turns`, IS accounted and not counted here), and the orchestrator
+warns (before each budget check, in the final summary, and before aborting on a failed planning
+phase) whenever `uncounted_runs > 0`. The check also runs only between sprints, never inside a
 sprint's retry loop.
 
 ### Agent composition pattern

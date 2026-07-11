@@ -654,6 +654,18 @@ export async function main(
     const ok = await phasePlanning(userPrompt, config, workspace, progress);
     progress.save(workspace);
     if (!ok) {
+      // DX-20 : un planner crashé/avorté pousse un run cost_usd=0 — sans ce
+      // warning, le run se terminerait ici (exit avant les deux autres sites
+      // d'émission : check budget inter-sprints et résumé final) avec
+      // uncounted_runs persisté mais aucune mention de la borne basse.
+      const planningUncountedWarning = formatUncountedRunsWarning(
+        progress.uncounted_runs,
+        progress.total_cost_usd,
+        config.budget.max_total_usd,
+      );
+      if (planningUncountedWarning !== null) {
+        console.warn(planningUncountedWarning);
+      }
       console.error("Planning failed — aborting");
       process.exit(1);
     }
