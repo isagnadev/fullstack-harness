@@ -88,4 +88,4 @@ not zod — faithful to V1).
 - Agent prompts in `prompts/` are written in French; the inline user-prompts in `src/agents/*.ts` are in English (verbatim from V1)
 - All config (models, limits, security, budget, QA thresholds) lives in `config.yaml`; `src/types.ts` mirrors it as compile-time interfaces
 - Agents are stateless — each invocation starts fresh via `runAgent()`
-- Unit tests (`vitest`) cover the pure-logic modules only (`security`, `tools`, `progress`, scoring); the SDK-driven paths are validated by real runs
+- Unit tests (`vitest`) cover the pure-logic modules (`security`, `tools`, `progress`, `paths`, `preflight`) and the exported pure orchestrator helpers, plus the runner's failure paths via a mocked SDK (`tests/client.test.ts`); the full SDK-driven pipeline is validated by real runs
